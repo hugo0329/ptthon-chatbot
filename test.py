@@ -1,59 +1,112 @@
-from langchain_ollama.llms import OllamaLLM
-from langchain_ollama.chat_models import ChatOllama
-from langchain.embeddings import OllamaEmbeddings
-from langchain_community.embeddings import OllamaEmbeddings
-import requests
+import ollama
+from langchain.memory import ConversationBufferMemory
+from langchain.prompts import PromptTemplate
 
-API_URL = "http://localhost:11434/api/completion"
+# --- 健身計畫對話模板 ---
+template = """
+你是一個健身專家聊天機器人，能根據用戶的目標生成詳細的健身計畫，並回答健康相關問題。
+以下是你需要提供的功能：
+1. 根據 BMI 提供建議。
+2. 根據健身目標（如增肌、減脂、耐力提升）生成個性化健身計畫。
+3. 提供飲食建議或動作指導。
 
-def query_ollama(prompt):
-    payload = {"model": "llama2", "prompt": prompt}
-    try:
-        response = requests.post(API_URL, json=payload)
-        if response.status_code != 200:
-            print(f"Error: {response.status_code} - {response.text}")
-            return None
-        return response.json()  # 嘗試解析 JSON
-    except requests.exceptions.RequestException as e:
-        print(f"Request failed: {e}")
-    except ValueError:
-        print("Failed to parse JSON response")
-    return None
+用戶的對話內容如下：
+{history}
 
-response = query_ollama("Explain LangChain in simple terms.")
-print(response)
-from ollama import Ollama
+用戶剛剛的輸入是：
+{input}
 
-# 初始化 Ollama 模型
-ollama_client = Ollama()
+根據以上內容，請回答用戶的問題或提供建議。
+"""
+prompt = PromptTemplate(input_variables=["history", "input"], template=template)
 
-# 指定使用的模型 (例如 GPT 模型)
-model_name = "gpt3.5"
+# 初始化記憶
+memory = ConversationBufferMemory()
 
-# 發送查詢
-response = ollama_client.generate(
-    prompt="請問今天的天氣如何？",
-    model=model_name
-)
+# --- 健身助手類 ---
+class FitnessAssistant:
+    def __init__(self):
+        self.ollama_client = ollama.Client()
+        self.memory = memory
+        self.prompt = prompt
+    
+    def chat(self, user_input):
+        """處理用戶輸入，返回生成的回應"""
+        try:
+            # 整理歷史記憶作為對話上下文
+            history = "\n".join([
+                f"用戶: {msg.content}" if msg.type == "human" else f"助手: {msg.content}"
+                for msg in self.memory.chat_memory.messages
+            ])
+            
+            # 針對健身目標進行特殊處理
+            if "增肌" in user_input:
+                reply = "增肌的關鍵是負重訓練與高蛋白飲食。每週應該進行3-5次重量訓練，並確保飲食中有足夠的蛋白質。"
+            elif "減脂" in user_input:
+                reply = "減脂的重點在於創造熱量赤字，結合有氧運動和力量訓練，並注意飲食控制，少吃高糖高脂肪的食物。"
+            elif "耐力" in user_input or "提升" in user_input:
+                reply = "提升耐力需要進行長時間的有氧訓練，如跑步、游泳或騎車，每週持續練習2-3次，每次至少30分鐘。"
+            else:
+                # 如果沒有匹配到特定目標，則使用原來的對話生成邏輯
+                formatted_prompt = self.prompt.format(history=history, input=user_input)
+                
+                # 使用 Llama 3.2 模型生成回應
+                response = self.ollama_client.generate(model="llama3.2", prompt=formatted_prompt)
+                reply = response.get("content", "抱歉，我無法理解你的請求。")
+            
+            # 保存對話記憶
+            self.memory.chat_memory.add_user_message(user_input)
+            self.memory.chat_memory.add_ai_message(reply)
+            
+            return reply
+        except Exception as e:
+            return f"系統錯誤：{e}"
+    
+    def calculate_bmi(self, weight, height):
+        """計算 BMI 並返回分類結果"""
+        try:
+            bmi = weight / (height ** 2)
+            if bmi < 18.5:
+                category = "體重過輕"
+            elif 18.5 <= bmi < 24.9:
+                category = "正常"
+            elif 25 <= bmi < 29.9:
+                category = "過重"
+            else:
+                category = "肥胖"
+            return f"您的 BMI 是 {bmi:.2f}，屬於 {category} 範圍。"
+        except ZeroDivisionError:
+            return "身高不能為零，請重新輸入。"
+        except Exception as e:
+            return f"計算錯誤：{e}"
 
-print(response)
-from langchain import PromptTemplate, LLMChain
-from langchain.llms import OpenAI
+# --- 主邏輯 ---
+def main():
+    print("你好！我是你的健身計畫聊天助手，隨時為你提供健身建議或生成健身計畫。")
+    assistant = FitnessAssistant()
+    
+    while True:
+        user_input = input("\n請輸入您的問題或需求（輸入 '退出' 結束）：\n")
+        
+        if user_input.strip() == "退出":
+            print("感謝使用，再見！")
+            break
 
-# 使用 LangChain 提供的 LLM 接口
-llm = OpenAI(model_name="gpt3.5", client=ollama_client)
+        # 支援 BMI 計算的快捷功能
+        if "BMI" in user_input.upper():
+            try:
+                weight = float(input("請輸入體重（公斤）："))
+                height = float(input("請輸入身高（公尺）："))
+                bmi_result = assistant.calculate_bmi(weight, height)
+                print(f"\n助手：{bmi_result}")
+            except ValueError:
+                print("\n助手：請確保輸入的是正確的數字格式。")
+            continue
 
-# 定義 Prompt Template
-template = PromptTemplate(
-    input_variables=["question"],
-    template="以下是使用者的問題：{question}。請提供詳細解答。"
-)
+        # 使用對話生成回應
+        response = assistant.chat(user_input)
+        print(f"\n助手：{response}")
 
-# 建立 LLM Chain
-llm_chain = LLMChain(llm=llm, prompt=template)
-
-# 測試模型
-question = "如何整合 Ollama 和 LangChain？"
-result = llm_chain.run({"question": question})
-print(result)
-
+# 啟動
+if __name__ == "__main__":
+    main()
