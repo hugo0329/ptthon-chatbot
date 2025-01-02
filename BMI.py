@@ -1,10 +1,10 @@
 import ollama
-import logging
+from langchain.chains import ConversationChain
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
 
-# 設定日誌
-logging.basicConfig(level=logging.INFO)
+# 初始化 Ollama 模型
+ollama_client = ollama.Client()
 
 # --- 健身計畫對話模板 ---
 template = """
@@ -27,148 +27,117 @@ prompt = PromptTemplate(input_variables=["history", "input"], template=template)
 # 初始化記憶
 memory = ConversationBufferMemory()
 
-# --- 健身助手類 ---
-class FitnessAssistant:
-    def __init__(self):
-        self.ollama_client = ollama.Client()
-        self.memory = memory
-        self.prompt = prompt
-        self.model_name = "llama2"  # 替換為已安裝的模型名稱
+# --- 功能函數 ---
+def calculate_bmi(weight, height):
+    """計算 BMI 並返回建議"""
+    bmi = weight / (height ** 2)
+    if bmi < 18.5:
+        return f"你的 BMI 是 {bmi:.1f}，屬於體重過輕範圍，建議增加營養攝取並結合力量訓練。"
+    elif 18.5 <= bmi < 24.9:
+        return f"你的 BMI 是 {bmi:.1f}，屬於健康範圍，請繼續保持健康的生活方式！"
+    elif 25 <= bmi < 29.9:
+        return f"你的 BMI 是 {bmi:.1f}，屬於體重過重範圍，建議控制飲食並增加有氧運動。"
+    else:
+        return f"你的 BMI 是 {bmi:.1f}，屬於肥胖範圍，建議在專業人士指導下進行飲食控制和系統健身計畫。"
 
-    def chat(self, user_input):
-        """處理用戶輸入，返回生成的回應"""
-        try:
-            # 整理歷史記憶作為對話上下文
-            history = "\n".join([
-                f"用戶: {msg.content}" if msg.type == "human" else f"助手: {msg.content}"
-                for msg in self.memory.chat_memory.messages
-            ])
-            
-            # 格式化 Prompt
-            formatted_prompt = self.prompt.format(history=history, input=user_input)
-            logging.info(f"生成的 Prompt: {formatted_prompt}")
-            
-            # 嘗試使用模型生成回應
-            response = self.ollama_client.generate(model=self.model_name, prompt=formatted_prompt)
-
-            reply = response.get("content", "抱歉，我無法理解你的請求。")
-            
-            # 保存對話記憶
-            self.memory.chat_memory.add_user_message(user_input)
-            self.memory.chat_memory.add_ai_message(reply)
-            
-            return reply
-        except Exception as e:
-            logging.error(f"出現錯誤: {e}")
-            return f"系統錯誤：{e}"
+def generate_fitness_plan(goal):
+    """根據健身目標生成個性化計畫"""
+    prompt = f"你是一個健身教練，幫助用戶達成健身目標。用戶的目標是：{goal}。請生成一個詳細的健身計畫。"
+    response = ollama_client.generate(model="llama2", prompt=prompt)
+    generated_plan = response.get("content", "").strip()
     
-    def calculate_bmi(self, weight, height):
-        """計算 BMI 並返回分類結果"""
-        try:
-            if weight <= 0 or height <= 0:
-                return "體重和身高必須是正數，請重新輸入。"
-            
-            bmi = weight / (height ** 2)
-            if bmi < 18.5:
-                category = "體重過輕"
-            elif 18.5 <= bmi < 24.9:
-                category = "正常"
-            elif 25 <= bmi < 29.9:
-                category = "過重"
-            else:
-                category = "肥胖"
-            return f"您的 BMI 是 {bmi:.2f}，屬於 {category} 範圍。"
-        except ZeroDivisionError:
-            return "身高不能為零，請重新輸入。"
-        except Exception as e:
-            logging.error(f"BMI 計算錯誤: {e}")
-            return f"計算錯誤：{e}"
-# --- 生成健身計畫函數 ---
-def generate_fitness_plan(goal, current_fitness_level=None, available_time_per_week=None):
-    """
-    根據用戶的健身目標生成個性化健身計畫。
-    """
-    try:
-        # 基本健身計畫模板
-        if not current_fitness_level:
-            current_fitness_level = "初學者"  # 默認為初學者
-        if not available_time_per_week:
-            available_time_per_week = 5  # 默認每週可鍛煉5小時
-
-        plan = f"健身目標：{goal}\n目前健身水平：{current_fitness_level}\n每週可用鍛煉時間：約{available_time_per_week}小時\n\n"
-
-        if goal == "增肌":
-            plan += (
-                "建議計畫：\n"
-                "- 每週進行 4-5 次力量訓練，專注於大肌群（如胸、背、腿）。\n"
-                "- 每組 6-12 次，3-4 組，重量選擇為 70%-85% 的最大負重。\n"
-                "- 飲食建議：每天攝取比基礎代謝率多 300-500 卡路里，增加蛋白質（每公斤體重 1.6-2.2 克）。\n"
+    if not generated_plan:
+        # 提供預設建議
+        if goal.lower() == "增肌":
+            generated_plan = (
+                "增肌計畫建議：\n"
+                "- 每週進行 4-5 次力量訓練，專注於多關節動作如深蹲、硬拉和臥推。\n"
+                "- 每天攝取的蛋白質量為每公斤體重 1.6-2.2 克，碳水化合物和健康脂肪比例保持平衡。\n"
+                "- 確保每晚睡眠 7-9 小時，促進肌肉修復與成長。"
             )
-        elif goal == "減脂":
-            plan += (
-                "建議計畫：\n"
-                "- 每週進行 3 次力量訓練，2-3 次高強度間歇訓練（HIIT）或有氧運動。\n"
-                "- 力量訓練每組 12-15 次，2-3 組，以中等重量為主。\n"
-                "- 飲食建議：每天攝取比基礎代謝率少 300-500 卡路里，控制碳水化合物攝入，增加膳食纖維。\n"
+        elif goal.lower() == "減脂":
+            generated_plan = (
+                "減脂計畫建議：\n"
+                "- 每週進行 3-5 次有氧運動，如跑步或高強度間歇訓練（HIIT）。\n"
+                "- 每天攝取的熱量控制在總消耗量以下，保持高蛋白飲食以保留肌肉質量。\n"
+                "- 結合每週 2-3 次力量訓練，提升基礎代謝率。"
             )
-        elif goal == "耐力提升":
-            plan += (
-                "建議計畫：\n"
-                "- 每週進行 3 次有氧運動（如跑步、游泳、騎行），每次 30-60 分鐘。\n"
-                "- 1-2 次力量訓練，以全身性動作（如深蹲、硬舉、推舉）為主。\n"
-                "- 運動強度逐步提高，可使用心率監測器，將心率控制在最大心率的 60%-80%。\n"
-                "- 飲食建議：增加碳水化合物比例，確保訓練前後補充能量。\n"
+        elif goal.lower() == "耐力提升":
+            generated_plan = (
+                "耐力提升計畫建議：\n"
+                "- 每週進行 4-6 次心肺耐力訓練，如長跑、游泳或騎行。\n"
+                "- 間歇加入短跑或高強度運動，提高心肺能力和速度。\n"
+                "- 保持充足的碳水化合物攝取，確保訓練過程中有足夠能量。\n"
+                "- 每週至少進行一次休息或輕度活動，防止過度訓練。"
             )
         else:
-            plan += "抱歉，目前我們僅支持增肌、減脂或耐力提升的健身計畫建議。"
+            generated_plan = "目前僅支持增肌、減脂和耐力提升的建議計畫，請輸入其中之一的目標！"
+    
+    return generated_plan
 
-        return plan
-    except Exception as e:
-        return f"生成健身計畫時出現錯誤：{e}"
+
+def provide_diet_or_exercise_advice(topic):
+    """提供飲食或動作指導"""
+    prompt = f"你是一個健身專家。請提供有關 {topic} 的專業建議。"
+    response = ollama_client.generate(model="llama2", prompt=prompt)
+    generated_advice = response.get("content", "").strip()
+    
+    if not generated_advice:
+        # 提供預設建議
+        if "飲食" in topic:
+            generated_advice = (
+                "一般飲食建議：\n"
+                "- 保持飲食均衡，包含足量的蛋白質、碳水化合物和健康脂肪。\n"
+                "- 多攝取蔬菜和水果，補充必要的維生素與礦物質。\n"
+                "- 控制加工食品和含糖飲料的攝取，選擇天然食材。\n"
+                "- 根據目標調整熱量攝取（減脂需熱量赤字，增肌需熱量盈餘）。"
+            )
+        elif "動作" in topic or "運動" in topic:
+            generated_advice = (
+                "一般動作指導建議：\n"
+                "- 力量訓練時確保動作正確，避免不必要的受傷風險。\n"
+                "- 使用適當的重量，確保能完成每組 8-12 次。\n"
+                "- 有氧運動如跑步時，保持穩定的呼吸和適當的心率區間。\n"
+                "- 訓練後進行充分的拉伸，促進肌肉放鬆與恢復。"
+            )
+        else:
+            generated_advice = "目前僅支持飲食和動作相關的建議，請指定更清晰的主題！"
+    
+    return generated_advice
 
 # --- 主邏輯 ---
 def main():
     print("你好！我是你的健身計畫聊天助手，隨時為你提供健身建議或生成健身計畫。")
-    assistant = FitnessAssistant()
     
     while True:
-        user_input = input("\n請輸入您的問題或需求（輸入 '退出' 結束）：\n")
+        user_input = input("\n請輸入您的問題或需求（如 '計算 BMI' 或 '生成健身計畫'，輸入 '退出' 結束）：\n")
         
         if user_input.strip() == "退出":
-            confirm = input("你確定要退出嗎？（輸入 '是' 確認，其他鍵取消）：")
-            if confirm == "是":
-                print("感謝使用，再見！")
-                break
-            continue
-        if "BMI" in user_input.upper():
+            print("感謝使用，再見！")
+            break
+        
+        if user_input.strip().lower().startswith("bmi"):
             try:
-                weight = float(input("請輸入體重（公斤）："))
-                height = float(input("請輸入身高（公尺）："))
-                bmi_result = assistant.calculate_bmi(weight, height)
+                weight = float(input("請輸入你的體重（公斤）："))
+                height = float(input("請輸入你的身高（米）："))
+                bmi_result = calculate_bmi(weight, height)
                 print(f"\n助手：{bmi_result}")
             except ValueError:
-                print("\n助手：請確保輸入的是正確的數字格式。")
-            continue
-        # 支援生成個性化健身計畫的功能
-        if "健身計畫" in user_input:
-            print("請選擇健身目標（增肌、減脂、耐力提升）：")
-            goal = input("您的健身目標是：").strip()
-            fitness_level = input("您的健身水平（初學者、中級、高級，可選）：").strip()
-            time_per_week = input("您每週可用鍛煉時間（以小時計，可選）：").strip()
-            
-            try:
-                fitness_level = fitness_level if fitness_level else None
-                time_per_week = float(time_per_week) if time_per_week else None
-                plan = generate_fitness_plan(goal, fitness_level, time_per_week)
-                print(f"\n助手：以下是為您生成的健身計畫：\n{plan}")
-            except ValueError:
-                print("\n助手：請確保輸入的時間為數字格式。")
-            continue
+                print("\n助手：請輸入有效的數字！")
+        
+        elif user_input.strip().lower().startswith("健身計畫"):
+            goal = input("請輸入你的健身目標（如增肌、減脂、耐力提升）：")
+            fitness_plan = generate_fitness_plan(goal)
+            print(f"\n助手：{fitness_plan}")
+        
+        elif user_input.strip().lower().startswith("建議"):
+            topic = input("請描述你需要的建議（如飲食、特定運動）：")
+            advice = provide_diet_or_exercise_advice(topic)
+            print(f"\n助手：{advice}")
+        
+        else:
+            print("\n助手：抱歉，我無法理解你的請求，請嘗試輸入 '計算 BMI' 或 '生成健身計畫' 等關鍵字。")
 
-        # 使用對話生成回應
-        response = assistant.chat(user_input)
-        print(f"\n助手：{response}")
-
-# --- 啟動 ---
+# 啟動
 if __name__ == "__main__":
     main()
