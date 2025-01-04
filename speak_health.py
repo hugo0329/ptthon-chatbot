@@ -85,8 +85,9 @@ def main():
 
     # 計算 BMI 並給建議
     bmi_suggestion = calculate_bmi(weight, height)
-    speak(bmi_suggestion)
     print(bmi_suggestion)
+    speak(bmi_suggestion)
+    
 
     # 獲取健身目標
     speak("請告訴我您的健身目標，例如增肌、減脂或提升耐力。")
@@ -97,8 +98,9 @@ def main():
     # 生成健身計畫
     fitness_plan = get_fitness_plan(goal, weight, height)
     speak("根據您的需求，我為您生成了以下健身計畫：")
-    speak(fitness_plan)
     print(fitness_plan)
+    speak(fitness_plan)
+    
 
 # 運行主程式
 if __name__ == "__main__":
