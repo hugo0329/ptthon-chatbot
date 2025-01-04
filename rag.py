@@ -3,6 +3,9 @@ import pyttsx3
 from langchain_community.llms import Ollama
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
+from langchain.indexes import VectorstoreIndexCreator
+from langchain_community.document_loaders import TextLoader
+from langchain_ollama import OllamaEmbeddings
 
 # 初始化文字轉語音引擎
 engine = pyttsx3.init()
@@ -41,20 +44,30 @@ def calculate_bmi(weight, height):
     else:
         return f"您的 BMI 是 {bmi:.1f}，屬於肥胖範圍。建議減脂計畫並與專家討論健康策略。"
 
-# 使用 Ollama 模型生成個性化計畫
-def get_fitness_plan(goal, weight, height):
+# 初始化嵌入模型和向量檢索索引
+embeddings_model = OllamaEmbeddings(model="llama3.2")
+loader = TextLoader(file_path='./fitness_knowledge.txt', encoding="utf8")  # 背景知識檔案
+index = VectorstoreIndexCreator(embedding=embeddings_model).from_loaders([loader])
+
+def get_fitness_plan_with_rag(goal, weight, height):
+    """使用 RAG 提供個性化健身計畫"""
+    # 使用檢索獲取相關背景知識
+    context = index.query(question=f"關於{goal}的健身建議，結合體重 {weight} 公斤和身高 {height} 公分的需求，提供背景資訊。")
+
+    # 使用 Ollama 模型生成計畫
     llm = Ollama(model="llama3.2")
     template = """
-    基於以下資訊生成個性化的健身計畫：
+    根據以下背景資訊和用戶資料，生成個性化的健身計畫：
+    - 背景資訊：{context}
     - 體重：{weight} 公斤
     - 身高：{height} 公分
     - 健身目標：{goal}
 
     請給出專業建議，包括鍛煉計畫、推薦的動作，以及飲食建議。
     """
-    prompt = PromptTemplate(input_variables=["goal", "weight", "height"], template=template)
+    prompt = PromptTemplate(input_variables=["context", "goal", "weight", "height"], template=template)
     chain = LLMChain(llm=llm, prompt=prompt)
-    response = chain.run(goal=goal, weight=weight, height=height)
+    response = chain.run(context=context, goal=goal, weight=weight, height=height)
     return response
 
 # 主程式邏輯
@@ -94,11 +107,11 @@ def main():
     if goal is None:
         return
 
-    # 生成健身計畫
-    fitness_plan = get_fitness_plan(goal, weight, height)
+    # 使用 RAG 生成健身計畫
+    fitness_plan = get_fitness_plan_with_rag(goal, weight, height)
     speak("根據您的需求，我為您生成了以下健身計畫：")
-    print(fitness_plan)
     speak(fitness_plan)
+    print(fitness_plan)
 
 # 運行主程式
 if __name__ == "__main__":
