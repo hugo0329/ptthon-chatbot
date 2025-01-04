@@ -2,6 +2,7 @@ import speech_recognition as sr
 import pyttsx3
 from langchain_ollama import OllamaLLM  # 使用 OllamaLLM
 from langchain.prompts import PromptTemplate
+import re
 
 # 初始化文字轉語音引擎
 engine = pyttsx3.init()
@@ -22,6 +23,30 @@ def get_voice_input():
                 text = recognizer.recognize_google(audio, language="zh-TW")
                 print(f"您說了：{text}")
                 return text
+            except sr.UnknownValueError:
+                speak("抱歉，我無法辨識您的語音。請再試一次。")
+            except sr.RequestError:
+                speak("語音服務出現問題。請稍後再試。")
+                return None
+            
+def get_chinese_input():
+    """使用語音轉文字進行用戶輸入，無限重試直到成功，且只接受中文輸入"""
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("請說話...")
+        while True:  # 持續重試直到成功
+            try:
+                audio = recognizer.listen(source, timeout=10)
+                text = recognizer.recognize_google(audio, language="zh-TW")  # 預設為中文
+                print(f"您說了：{text}")
+
+                # 檢查是否只有中文
+                if re.match(r'^[\u4e00-\u9fa5]+$', text):  # 正規表達式檢查是否只有中文字符
+                    return text
+                else:
+                    speak("請確保您只說中文。")
+                    print("請確保您只說中文。")
+                    continue  # 重新要求語音輸入
             except sr.UnknownValueError:
                 speak("抱歉，我無法辨識您的語音。請再試一次。")
             except sr.RequestError:
@@ -79,12 +104,12 @@ def main():
 
     # 計算 BMI 並給建議
     bmi_suggestion = calculate_bmi(weight, height)
-    speak(bmi_suggestion)
     print(bmi_suggestion)
+    speak(bmi_suggestion)
 
     # 獲取健身目標
     speak("請告訴我您的健身目標，例如增肌、減脂或提升耐力。")
-    goal = get_voice_input()
+    goal = get_chinese_input()
 
     # 生成健身計畫
     fitness_plan = get_fitness_plan(goal, weight, height)
