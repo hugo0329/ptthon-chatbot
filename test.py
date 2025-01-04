@@ -1,7 +1,7 @@
 import ollama
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import PromptTemplate
-
+#12345679
 # --- 健身計畫對話模板 ---
 template = """
 你是一個健身專家聊天機器人，能根據用戶的目標生成詳細的健身計畫，並回答健康相關問題。
