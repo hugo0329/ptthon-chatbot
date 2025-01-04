@@ -43,7 +43,7 @@ def calculate_bmi(weight, height):
 
 # 使用 Ollama 模型生成個性化計畫
 def get_fitness_plan(goal, weight, height):
-    llm = Ollama(model="llama2")
+    llm = Ollama(model="llama3")
     template = """
     基於以下資訊生成個性化的健身計畫：
     - 體重：{weight} 公斤
